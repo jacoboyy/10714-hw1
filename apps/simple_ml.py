@@ -10,7 +10,7 @@ sys.path.append("python/")
 import needle as ndl
 
 
-def parse_mnist(image_filesname, label_filename):
+def parse_mnist(image_filename, label_filename):
     """Read an images and labels file in MNIST format.  See this page:
     http://yann.lecun.com/exdb/mnist/ for a description of the file format.
 
@@ -32,9 +32,17 @@ def parse_mnist(image_filesname, label_filename):
                 labels of the examples.  Values should be of type np.int8 and
                 for MNIST will contain the values 0-9.
     """
-    ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
-    ### END YOUR SOLUTION
+    # read image file
+    with gzip.open(image_filename, 'rb') as f:
+        _, num_images, rows, cols = struct.unpack(">IIII", f.read(16))
+        images = np.frombuffer(f.read(), dtype=np.uint8).reshape(num_images, rows * cols)
+    # scale image array
+    images = (images/255).astype(np.float32)
+    # read label file
+    with gzip.open(label_filename, 'rb') as f:
+        _, _ = struct.unpack(">II", f.read(8))
+        labels = np.frombuffer(f.read(), dtype=np.uint8)
+    return images, labels
 
 
 def softmax_loss(Z, y_one_hot):
@@ -54,14 +62,14 @@ def softmax_loss(Z, y_one_hot):
         Average softmax loss over the sample. (ndl.Tensor[np.float32])
     """
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    return (Z.exp().sum(axes=(1,)).log() - (Z * y_one_hot).sum(axes=(1,))).sum()/Z.shape[0]
     ### END YOUR SOLUTION
 
 
 def nn_epoch(X, y, W1, W2, lr=0.1, batch=100):
     """Run a single epoch of SGD for a two-layer neural network defined by the
     weights W1 and W2 (with no bias terms):
-        logits = ReLU(X * W1) * W1
+        logits = ReLU(X * W1) * W2
     The function should use the step size lr, and the specified batch size (and
     again, without randomizing the order of X).
 
@@ -81,10 +89,27 @@ def nn_epoch(X, y, W1, W2, lr=0.1, batch=100):
             W1: ndl.Tensor[np.float32]
             W2: ndl.Tensor[np.float32]
     """
-
-    ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
-    ### END YOUR SOLUTION
+    num_classes = W2.shape[1]
+    num_iters = X.shape[0]//batch
+    for i in range(num_iters):
+        # perform batching
+        start_idx, end_idx = i*batch, (i+1)*batch
+        X_batch = X[start_idx:end_idx, :]
+        y_batch = y[start_idx:end_idx]
+        # cast to Tensor
+        X_batch_tensor = ndl.Tensor(X_batch, requires_grad=False)
+        y_one_hot = np.zeros((batch, num_classes))
+        y_one_hot[np.arange(batch), y_batch] = 1
+        y_one_hot_tensor = ndl.Tensor(y_one_hot, requires_grad=False)
+        loss = softmax_loss(X_batch_tensor.matmul(W1).relu().matmul(W2), y_one_hot_tensor)
+        # take gradient
+        loss.backward()
+        # gradient updates: operate on numpy to avoid computational graph dependencies in a loop
+        W1_np = (W1 - W1.grad * lr).realize_cached_data()
+        W2_np = (W2 - W2.grad * lr).realize_cached_data()
+        W1 = ndl.Tensor(W1_np)
+        W2 = ndl.Tensor(W2_np)
+    return W1, W2
 
 
 ### CODE BELOW IS FOR ILLUSTRATION, YOU DO NOT NEED TO EDIT
